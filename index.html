@@ -162,6 +162,8 @@
   .diff b { color: var(--ink-soft); }
   .mb { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); border: 1px solid var(--line-14); padding: 2px 6px; border-radius: 6px; }
   .b-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  .b-title[contenteditable], .txt-content[contenteditable] { cursor: text; border-radius: 6px; padding: 1px 4px; margin: -1px -4px; }
+  .b-title[contenteditable]:focus, .txt-content[contenteditable]:focus { background: var(--w-50); outline: none; }
   .b-desc { font-size: 13px; color: var(--ink-soft); margin-top: 4px; line-height: 1.45; }
 
   .b-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex: none; }
@@ -194,7 +196,12 @@
   .comments { display: flex; flex-direction: column; gap: 8px; }
   .comment { padding: 10px 14px; border-radius: 12px; background: var(--w-40); border: 1px solid var(--w-50); }
   .c-txt { font-size: 13.5px; line-height: 1.45; word-wrap: break-word; }
-  .c-when { font-family: var(--mono); font-size: 9.5px; color: var(--ink-faint); letter-spacing: 0.08em; margin-top: 4px; }
+  .c-txt[contenteditable] { cursor: text; border-radius: 6px; }
+  .c-txt[contenteditable]:focus { background: var(--w-50); outline: none; }
+  .c-when { font-family: var(--mono); font-size: 9.5px; color: var(--ink-faint); letter-spacing: 0.08em; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; }
+  .c-del { background: none; border: none; cursor: pointer; color: var(--ink-faint); font-size: 13px; line-height: 1; padding: 2px 4px; opacity: 0; transition: opacity .2s; }
+  .comment:hover .c-del { opacity: 1; }
+  .c-del:hover { color: #e0709a; }
   .c-empty { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); letter-spacing: 0.06em; }
   .detail .add-row { margin-top: 10px; }
 
@@ -512,8 +519,9 @@
       return '<div class="thumb"><img src="' + src + '" data-view-img="' + kind + ":" + item.id + ":" + ix + '"/>' +
         '<button class="thumb-x" data-del-img="' + kind + ":" + item.id + ":" + ix + '">×</button></div>';
     }).join("");
-    var comments = (item.comments || []).length ? (item.comments).map(function (c) {
-      return '<div class="comment"><div class="c-txt">' + esc(c.txt) + '</div><div class="c-when">' + timeAgo(c.at) + '</div></div>';
+    var comments = (item.comments || []).length ? (item.comments).map(function (c, ix) {
+      return '<div class="comment"><div class="c-txt" contenteditable="true" spellcheck="false" data-edit-c="' + d + ":" + ix + '">' + esc(c.txt) + '</div>' +
+        '<div class="c-when">' + timeAgo(c.at) + '<button class="c-del" data-del-c="' + d + ":" + ix + '" title="Delete note">×</button></div></div>';
     }).join("") : '<div class="c-empty">No notes yet.</div>';
     return '<div class="detail" data-item="' + d + '">' +
       (item.desc ? '<div class="d-label">Brief</div><div class="b-desc" style="margin:0 0 4px">' + esc(item.desc) + '</div>' : "") +
@@ -533,7 +541,7 @@
       '<div class="b-main" data-toggle="' + t.id + '">' +
       '<div class="b-body"><div class="b-tags">' + catTag(t.cat) +
       '<span class="diff"><b>' + t.diff + '</b> · ' + PHASES[t.phase] + '</span>' + metaBadges(t) + '</div>' +
-      '<div class="b-title">' + esc(t.title) + '</div></div>' +
+      '<div class="b-title" contenteditable="true" spellcheck="false" data-edit-title="task:' + t.id + '">' + esc(t.title) + '</div></div>' +
       '<div class="b-right">' + right + '</div>' +
       '<button class="b-del" data-del-task="' + t.id + '" title="Delete">×</button>' +
       '<span class="caret' + (open ? " up" : "") + '">▸</span></div>' +
@@ -578,7 +586,7 @@
     var open = !!openIds[i.id];
     return '<div class="glass idea" id="idea_' + i.id + '">' +
       '<div class="i-main" data-toggle="' + i.id + '"><div class="dot"></div>' +
-      '<div class="txt">' + esc(i.txt) + '<div class="when">' + timeAgo(i.at) + ' ' + metaBadges(i) + '</div></div>' +
+      '<div class="txt"><div class="txt-content" contenteditable="true" spellcheck="false" data-edit-title="idea:' + i.id + '">' + esc(i.txt) + '</div><div class="when">' + timeAgo(i.at) + ' ' + metaBadges(i) + '</div></div>' +
       '<div class="idea-acts"><button class="mini" data-promote="' + i.id + '">→ Bounty</button>' +
       '<button class="mini" data-del-idea="' + i.id + '">Delete</button></div>' +
       '<span class="caret' + (open ? " up" : "") + '">▸</span></div>' +
@@ -602,7 +610,31 @@
 
   function wireDetails(el) {
     el.querySelectorAll("[data-toggle]").forEach(function (m) {
-      m.onclick = function (e) { if (e.target.closest("button")) return; var id = m.getAttribute("data-toggle"); if (openIds[id]) delete openIds[id]; else openIds[id] = true; render(); };
+      m.onclick = function (e) { if (e.target.closest("button") || e.target.closest("[contenteditable]")) return; var id = m.getAttribute("data-toggle"); if (openIds[id]) delete openIds[id]; else openIds[id] = true; render(); };
+    });
+    el.querySelectorAll("[data-edit-title]").forEach(function (elx) {
+      elx.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); elx.blur(); } });
+      elx.addEventListener("blur", function () {
+        var p = elx.getAttribute("data-edit-title").split(":");
+        var it = getItem(p[0], p[1]); if (!it) return;
+        var v = elx.textContent.trim();
+        if (!v) { elx.textContent = p[0] === "idea" ? it.txt : it.title; return; }
+        if (p[0] === "idea") it.txt = v; else it.title = v;
+        save();
+      });
+    });
+    el.querySelectorAll("[data-edit-c]").forEach(function (c) {
+      c.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); c.blur(); } });
+      c.addEventListener("blur", function () {
+        var p = c.getAttribute("data-edit-c").split(":");
+        var it = getItem(p[0], p[1]); if (!it || !it.comments || !it.comments[+p[2]]) return;
+        var v = c.textContent.trim();
+        if (!v) { c.textContent = it.comments[+p[2]].txt; return; }
+        it.comments[+p[2]].txt = v; save();
+      });
+    });
+    el.querySelectorAll("[data-del-c]").forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); var p = b.getAttribute("data-del-c").split(":"); var it = getItem(p[0], p[1]); if (it && it.comments) { it.comments.splice(+p[2], 1); save(); render(); } };
     });
     el.querySelectorAll(".add-img").forEach(function (b) {
       b.onclick = function (e) { e.stopPropagation(); window._imgTarget = b.getAttribute("data-img"); document.getElementById("filePick").click(); };
