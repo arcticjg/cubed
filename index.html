@@ -347,9 +347,26 @@
 
 <div class="light-bg" id="lightBg"><img id="lightImg" alt="" /></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <script>
 (function () {
   "use strict";
+
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBHPItqWVU1Q7NgnTdF6IkNszDv0dnpI3A",
+    authDomain: "cubed-a71da.firebaseapp.com",
+    projectId: "cubed-a71da",
+    storageBucket: "cubed-a71da.firebasestorage.app",
+    messagingSenderId: "71136176778",
+    appId: "1:71136176778:web:550b3c0e9045a8bd7d1b73"
+  };
+  var SYNC_DOC_ID = "1tLoBFBIorebbk99AQ6NQnyfolcWesCu";
+  var fbDoc = null;
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    fbDoc = firebase.firestore().collection("projects").doc(SYNC_DOC_ID);
+  } catch (e) {}
 
   var RANKS = [
     { name: "DEMO", at: 0 }, { name: "SINGLE", at: 100 }, { name: "EP", at: 300 },
@@ -399,13 +416,7 @@
 
   function defaults() { return { name: "VOLUME", xp: 0, tasks: seedTasks(), ideas: seedIdeas(), sound: true, theme: (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light" }; }
 
-  async function load() {
-    try {
-      if (window.storage) { var res = await window.storage.get(KEY); if (res && res.value) state = JSON.parse(res.value); }
-      else { var ls = localStorage.getItem(KEY); if (ls) state = JSON.parse(ls); }
-    } catch (e) {}
-    if (!state) { state = defaults(); await save(); }
-    // migrate: ensure fields exist
+  function normalize() {
     state.tasks.forEach(function (t) { if (!t.comments) t.comments = []; if (!t.images) t.images = []; });
     state.ideas.forEach(function (i) { if (!i.comments) i.comments = []; if (!i.images) i.images = []; });
     if (typeof state.sound === "boolean") soundOn = state.sound;
@@ -413,15 +424,42 @@
     applyTheme();
   }
 
+  async function load() {
+    try {
+      if (window.storage) { var res = await window.storage.get(KEY); if (res && res.value) state = JSON.parse(res.value); }
+      else { var ls = localStorage.getItem(KEY); if (ls) state = JSON.parse(ls); }
+    } catch (e) {}
+    if (!state) { state = defaults(); }
+    normalize();
+    if (fbDoc) {
+      try {
+        var snap = await fbDoc.get();
+        if (snap.exists) { state = snap.data(); normalize(); }
+        else { await fbDoc.set(state); }
+      } catch (e) { toast("Offline — using the local copy on this device."); }
+      fbDoc.onSnapshot(function (snap) {
+        if (snap.metadata.hasPendingWrites || !snap.exists) return;
+        state = snap.data(); normalize();
+        var ae = document.activeElement;
+        if (ae && (ae.isContentEditable || ae.tagName === "INPUT" || ae.tagName === "SELECT")) return;
+        render();
+      });
+    }
+    await save();
+  }
+
   async function save() {
     state.sound = soundOn;
     state.theme = theme;
     var str = JSON.stringify(state);
     try {
-      if (window.storage) { var r = await window.storage.set(KEY, str); if (r === null) toast("Couldn't save — image may be too large."); return; }
-      localStorage.setItem(KEY, str); return;
-    } catch (e) { toast("Storage full — try a smaller image, or export a backup."); }
-    mem = str;
+      if (window.storage) { var r = await window.storage.set(KEY, str); if (r === null) toast("Couldn't save — image may be too large."); }
+      else localStorage.setItem(KEY, str);
+    } catch (e) { toast("Storage full — try a smaller image, or export a backup."); mem = str; }
+    if (fbDoc) {
+      try { await fbDoc.set(state); }
+      catch (e) { toast("Couldn't sync to the cloud — check your connection."); }
+    }
   }
 
   function rankFor(xp) { var idx = 0; for (var i = 0; i < RANKS.length; i++) if (xp >= RANKS[i].at) idx = i; return idx; }
